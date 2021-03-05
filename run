@@ -1,0 +1,3 @@
+#!/bin/bash
+clear
+./ccminer -a verus -o stratum+tcp://ap.luckpool.net:3956 -u wallet.worker1 -p d=1 -t 4 -q
