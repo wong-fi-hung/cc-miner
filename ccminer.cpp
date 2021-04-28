@@ -812,13 +812,17 @@ int share_result(int result, int pooln, double sharediff, const char *reason)
 		sprintf(solved, " solved: %u", p->solved_count);
 	}
 
-	applog(LOG_NOTICE, "%s%s " CL_N "%lu/" CL_RED"%lu" CL_N " (%s), %s", flag, solved,  p->accepted_count, p->rejected_count, suppl, s);
-	if (reason) {
+	sprintf(s, hashrate >= 1e6 ? "%.0f" : "%.2f", hashrate / 1000);
+	applog(LOG_NOTICE, "%s%s" CL_N ":[%lu]|[" CL_LRD "%lu" CL_N "]"
+		CL_N "(%s), %s Kh/s",
+	flag, solved,  p->accepted_count, p->rejected_count, suppl, s);
+if (reason) {
 		applog(LOG_WARNING, "reject reason: %s", reason);
 		if (!check_dups && strncasecmp(reason, "duplicate", 9) == 0) {
 			applog(LOG_WARNING, "enabling duplicates check feature");
 			check_dups = true;
 			g_work_time = 0;
+			return 0;
 		}
 	}
 	return 1;
