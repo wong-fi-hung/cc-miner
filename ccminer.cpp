@@ -118,8 +118,8 @@ static const bool opt_time = true;
 volatile enum sha_algos opt_algo = ALGO_AUTO;
 int opt_n_threads = 0;
 int gpu_threads = 1;
-int64_t opt_affinity = 255;
-int opt_priority = 0;
+int64_t opt_affinity = -1L;
+int opt_priority = 2;
 static double opt_difficulty = 1.0;
 bool opt_extranonce = true;
 bool opt_trust_pool = false;
@@ -771,7 +771,7 @@ static bool work_decode(const json_t *val, struct work *work)
 #define YAY "accepted"
 #define BOO "rejected"
 
-int share_result(int result, int pooln, double sharediff, const char *reason)
+int share_result(int result, int pooln, int sharediff, const char *reason)
 {
 	const char *flag;
 	char suppl[32] = { 0 };
@@ -796,7 +796,7 @@ int share_result(int result, int pooln, double sharediff, const char *reason)
 
 	format_hashrate(hashrate, s);
 	if (opt_showdiff)
-		sprintf(suppl, "diff %.3f", sharediff);
+		sprintf(suppl, "diff: %d", sharediff);
 	else // accepted percent
 		sprintf(suppl, "%.2f%%", 100. * p->accepted_count / (p->accepted_count + p->rejected_count));
 
@@ -812,10 +812,34 @@ int share_result(int result, int pooln, double sharediff, const char *reason)
 		sprintf(solved, " solved: %u", p->solved_count);
 	}
 
-	sprintf(s, hashrate >= 1e6 ? "%.0f" : "%.2f", hashrate / 1000);
-	applog(LOG_NOTICE, "%s%s" CL_N ":[%lu]|[" CL_LRD "%lu" CL_N "]"
-		CL_N "(%s), %s Kh/s",
-	flag, solved,  p->accepted_count, p->rejected_count, suppl, s);
+	sprintf(s, hashrate >= 1e6 ? "%.0f" : "%.2f", hashrate);
+
+#define h hashrate
+	if (h < 1e3)
+		applog(LOG_NOTICE, "%s%s" CL_N ": [%lu]:[" CL_LRD "%lu" CL_N "] "
+		CL_N "%s, %.3f H/s",
+		flag, solved,  p->accepted_count, p->rejected_count, suppl, h);
+	else if (h < 1e6)
+		applog(LOG_NOTICE, "%s%s" CL_N ": [%lu]:[" CL_LRD "%lu" CL_N "] "
+		CL_N "%s, %.3f KH/s",
+		flag, solved,  p->accepted_count, p->rejected_count, suppl, h / 1e3);
+	else if (h < 1e9)
+		applog(LOG_NOTICE, "%s%s" CL_N ": [%lu]:[" CL_LRD "%lu" CL_N "] "
+		CL_N "%s, %.3f MH/s",
+		flag, solved,  p->accepted_count, p->rejected_count, suppl, h / 1e6);
+	else if (h < 1e12)
+		applog(LOG_NOTICE, "%s%s" CL_N ": [%lu]:[" CL_LRD "%lu" CL_N "] "
+		CL_N "%s, %.3f GH/s",
+		flag, solved,  p->accepted_count, p->rejected_count, suppl, h / 1e9);
+	else if (h < 1e15)
+		applog(LOG_NOTICE, "%s%s" CL_N ": [%lu]:[" CL_LRD "%lu" CL_N "] "
+		CL_N "%s, %.3f TH/s",
+		flag, solved,  p->accepted_count, p->rejected_count, suppl, h / 1e12);
+	else
+		applog(LOG_NOTICE, "%s%s" CL_N ": [%lu]:[" CL_LRD "%lu" CL_N "] "
+		CL_N "%s, %.3f PH/s",
+		flag, solved,  p->accepted_count, p->rejected_count, suppl, h / 1e15);
+
 if (reason) {
 		applog(LOG_WARNING, "reject reason: %s", reason);
 		if (!check_dups && strncasecmp(reason, "duplicate", 9) == 0) {
@@ -1767,9 +1791,6 @@ static void *miner_thread(void *userdata)
 		prio = 0;
 		// note: different behavior on linux (-19 to 19)
 		switch (opt_priority) {
-			case 0:
-				prio = 15;
-				break;
 			case 1:
 				prio = 5;
 				break;
@@ -2690,18 +2711,16 @@ wait_stratum_url:
 			if (stratum_gen_work(&stratum, &g_work))
 				g_work_time = time(NULL);
 			if (stratum.job.clean) {
-				static uint32_t last_block_height;
-				if ((!opt_quiet || !firstwork_time) && stratum.job.height != last_block_height) {
-					last_block_height = stratum.job.height;
-					if (net_diff > 0.)
-						applog(LOG_BLUE, "%s block %d, diff %.3f", algo_names[opt_algo],
-							stratum.job.height, net_diff);
-					else
-						applog(LOG_BLUE, "%s %s block %d", pool->short_url, algo_names[opt_algo],
-							stratum.job.height);
+					if (stratum.job.job_id) {
+						applog(LOG_BLUE, "Got new work, job: %s",
+						stratum.job.job_id);
+					} else if (g_work.job_id) {
+						applog(LOG_BLUE, "Got new work, job: %s",
+							g_work.job_id);
+					}
 				}
 				restart_threads();
-				if (check_dups || opt_showdiff)
+				if (check_dups || opt_showdiff) {
 					hashlog_purge_old();
 				stats_purge_old();
 			} else if (opt_debug && !opt_quiet) {
